@@ -1,5 +1,5 @@
 #################################################################################################
-#  This is the estimation code for "Interest rate effects and finite horizons", bachelor thesis 
+#  This is the estimation code for "Saving, interest rates and finite horizons", working 
 #  by Nirai Alexander Tomass. This code is adapted from that of the publicly available code from 
 #  Chen et al. (2019). 
 
@@ -194,57 +194,85 @@ xtable(table, digits = 3)
 ###--------------------------------------------------------------------------------------------------------
 ##Fixed effects estimation - LDC subsample
 
-form.fe = p_saving ~ lag(p_saving) + real*depend_old + gbb + pcgdp_g + hp_pcgdp + lrypc_ppp + rypc_g_un + depend_young + healthcare 
-fe.fit = plm(form.fe, na.omit(data[ldc == 1,]), model = "within", effect = "twoways", index = c("ccode", "year"))
-coefs.fe = coef(fe.fit)
-HCV.coefs = vcovHC(fe.fit, cluster = "group")
-cse.fe = sqrt(diag(HCV.coefs))
-s(fe.fit)
+# form.fe = p_saving ~ lag(p_saving) + real*depend_old + gbb + pcgdp_g + hp_pcgdp + lrypc_ppp + rypc_g_un + depend_young + healthcare 
+# fe.fit = plm(form.fe, na.omit(data[ldc == 1,]), model = "within", effect = "twoways", index = c("ccode", "year"))
+# coefs.fe = coef(fe.fit)
+# HCV.coefs = vcovHC(fe.fit, cluster = "group")
+# cse.fe = sqrt(diag(HCV.coefs))
+# s(fe.fit)
+# 
+# ##Split panel jacknife bias correction (See equation (3.3) in Dhaene and Jochmans (2015), or Chen et al. (2019))
+# fe.fit1 = plm(form.fe, na.omit(data[ldc == 1,]), subset = (as.double(year) <= 11), model = "within", effect = "twoways", index = c("ccode", "year")) 
+# fe.fit2 = plm(form.fe, na.omit(data[ldc == 1,]), subset = (as.double(year) > 11), model = "within", effect = "twoways", index = c("ccode", "year"))
+# coefs.jbc = 2*coef(fe.fit) - (1/2)*(coef(fe.fit1) + coef(fe.fit2))
+# 
+# ##Bootstrap standard errors 
+# data.rg = function(data, mle)
+# {
+#   N                  = length(unique(data$ccode))
+#   T                  = length(unique(data$year))
+#   ids                = kronecker(sample.int(N, N, replace = TRUE), rep(1,T))
+#   data.b             = data[(ids-1)*T + rep(c(1:T),N), ]
+#   data.b$ccode       = kronecker(c(1:N), rep(1,T))
+#   data.b$year        = rep(c(1995:2014),N) 
+#   data.b             = data.frame(data.b)
+#   data.b             = pdata.frame(data.b, index = c("ccode","year"))         # reset indexes of the panel 
+#   return(data.b)
+# }
+# 
+# boot.SE.fe = function(data, form.fe, form.abc){
+#   
+#   # Fixed Effects
+#   fe.fit    = plm(form.fe, na.omit(data), model = "within", effect = "twoways", index = c("id","year"))
+#   coefs.fe  = coef(fe.fit)
+#   
+#   # Split-sample bias correction
+#   fe.fit1   = plm(form.fe, na.omit(data), subset = (as.double(year) <= 11), model = "within", effect = "twoways", index = c("ccode","year"))
+#   fe.fit2   = plm(form.fe, na.omit(data), subset = (as.double(year) > 11), model = "within", effect = "twoways", index = c("ccode","year"))
+#   coefs.jbc = 2*coef(fe.fit) - (1/2)*(coef(fe.fit1) + coef(fe.fit2))
+#   
+#   
+#   return(c(coefs.fe, coefs.jbc))
+# }
+# 
+# library(boot) 
+# 
+# set.seed(888)
+# result.boot.SE.fe = boot(data = na.omit(data[ldc == 1,]), statistic=boot.SE.fe, sim = "parametric", ran.gen = data.rg, mle = 0, form.fe = form.fe, 
+#                          parallel="multicore", ncpus = 1, R=500);
+# 
+# 
+# rsd = function(x) {return((quantile(x,.75,na.rm=TRUE)-quantile(x,.25,na.rm=TRUE))/(qnorm(.75) - qnorm(.25)))} # robust estimator of std deviation based on IQR (see Benson, 1949)
+# 
+# result      = structure(vapply(result.boot.SE.fe$t, as.double, numeric(1)), dim=dim(result.boot.SE.fe$t)) # transforms "Error in La.svd(x, nu, nv) : error code 1 from Lapack routine 'dgesdd'\n" to NA
+# bse.fe      = apply(result[,1:11], 2, rsd)
+# bse.jbc     = apply(result[,12:22], 2, rsd)
 
-##Split panel jacknife bias correction (See equation (3.3) in Dhaene and Jochmans (2015), or Chen et al. (2019))
-fe.fit1 = plm(form.fe, na.omit(data[ldc == 1,]), subset = (as.double(year) <= 11), model = "within", effect = "twoways", index = c("ccode", "year")) 
-fe.fit2 = plm(form.fe, na.omit(data[ldc == 1,]), subset = (as.double(year) > 11), model = "within", effect = "twoways", index = c("ccode", "year"))
-coefs.jbc = 2*coef(fe.fit) - (1/2)*(coef(fe.fit1) + coef(fe.fit2))
+###--------------------------------------------------------------------------------------------------------
+##Fixed effects estimation - Analytical bias correction 
 
-##Bootstrap standard errors 
-data.rg = function(data, mle)
-{
-  N                  = length(unique(data$ccode))
-  T                  = length(unique(data$year))
-  ids                = kronecker(sample.int(N, N, replace = TRUE), rep(1,T))
-  data.b             = data[(ids-1)*T + rep(c(1:T),N), ]
-  data.b$ccode       = kronecker(c(1:N), rep(1,T))
-  data.b$year        = rep(c(1995:2014),N) 
-  data.b             = data.frame(data.b)
-  data.b             = pdata.frame(data.b, index = c("ccode","year"))         # reset indexes of the panel 
-  return(data.b)
+
+abc = function(data, form, lags, N) {
+  data$lag_savings = lag(data$p_saving,1); 
+  data$interact = data$real * data$depend_old;
+  fit = lm(form, data, x=TRUE, na.action = na.omit);
+  res = fit$residuals;
+  jac = solve(t(fit$x) %*% fit$x / length(res))[2:12,2:12];
+  indexes = c(1:length(res));
+  bscore = rep(0, 11)
+  T = length(res)/N;
+  for (i in 1:lags) {
+    indexes   = indexes[-c(1+c(0:(N-1))*T)];
+    lindexes  = indexes - i;
+    bscore  = bscore + t(fit$x[indexes, 2:12]) %*% res[lindexes] / length(indexes);
+  }
+  bias <- - jac %*% bscore;
+  return(as.vector(bias/T));
 }
 
-boot.SE.fe = function(data, form.fe, form.abc){
-  
-  # Fixed Effects
-  fe.fit    = plm(form.fe, na.omit(data), model = "within", effect = "twoways", index = c("id","year"))
-  coefs.fe  = coef(fe.fit)
-  
-  # Split-sample bias correction
-  fe.fit1   = plm(form.fe, na.omit(data), subset = (as.double(year) <= 11), model = "within", effect = "twoways", index = c("ccode","year"))
-  fe.fit2   = plm(form.fe, na.omit(data), subset = (as.double(year) > 11), model = "within", effect = "twoways", index = c("ccode","year"))
-  coefs.jbc = 2*coef(fe.fit) - (1/2)*(coef(fe.fit1) + coef(fe.fit2))
-  
-  
-  return(c(coefs.fe, coefs.jbc))
-}
-
-library(boot) 
-
-set.seed(888)
-result.boot.SE.fe = boot(data = na.omit(data[ldc == 1,]), statistic=boot.SE.fe, sim = "parametric", ran.gen = data.rg, mle = 0, form.fe = form.fe, 
-                         parallel="multicore", ncpus = 1, R=500);
-
-
-rsd = function(x) {return((quantile(x,.75,na.rm=TRUE)-quantile(x,.25,na.rm=TRUE))/(qnorm(.75) - qnorm(.25)))} # robust estimator of std deviation based on IQR (see Benson, 1949)
-
-result      = structure(vapply(result.boot.SE.fe$t, as.double, numeric(1)), dim=dim(result.boot.SE.fe$t)) # transforms "Error in La.svd(x, nu, nv) : error code 1 from Lapack routine 'dgesdd'\n" to NA
-bse.fe      = apply(result[,1:11], 2, rsd)
-bse.jbc     = apply(result[,12:22], 2, rsd)
+form.abc = p_saving ~ lag_savings + interact + depend_old + real + gbb + pcgdp_g + hp_pcgdp + lrypc_ppp + rypc_g_un + depend_young + healthcare + factor(year) + factor(ccode)
+bias = abc(data, form.abc, lags = 1, N = length(levels(ccode))); 
+coefs.abc4 = coefs.fe - bias 
+coefs.abc4
+coefs.jbc #coefficients stay roughly the same, standard errors are same as that of FE for analytical bias correction 
 
